@@ -84,7 +84,7 @@ app.post('/webhook', async (req, res) => {
   
   // Compute the embedding for the user's query using OpenAI
   let queryEmbedding;
-  const OPENAI_API_KEY='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';
+  const OPENAI_API_KEY='';
   try {
     const response = await axios.post(
       'https://api.openai.com/v1/embeddings',
