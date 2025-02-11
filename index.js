@@ -43,14 +43,16 @@ app.post("/webhook", async (req, res) => {
   console.log("🔹 Full Request Body:", JSON.stringify(req.body, null, 2));
 
   let knowledgeAnswer = "";
+  let knowledgeUri = "";
 
-  // Try extracting knowledge answer from multiple locations
+  // Extract knowledge answer and its URI
   if (
     req.body.sessionInfo &&
     req.body.sessionInfo.parameters &&
     req.body.sessionInfo.parameters["$request.knowledge.answers[0]"]
   ) {
     knowledgeAnswer = req.body.sessionInfo.parameters["$request.knowledge.answers[0]"];
+    knowledgeUri = req.body.sessionInfo.parameters["$request.knowledge.answers[0].uri"] || "";
   } else if (
     req.body.queryResult &&
     req.body.queryResult.knowledgeAnswers &&
@@ -58,6 +60,7 @@ app.post("/webhook", async (req, res) => {
     req.body.queryResult.knowledgeAnswers.answers.length > 0
   ) {
     knowledgeAnswer = req.body.queryResult.knowledgeAnswers.answers[0].answer;
+    knowledgeUri = req.body.queryResult.knowledgeAnswers.answers[0].uri || "";
   }
 
   // Fallback to user query if needed
@@ -75,7 +78,8 @@ app.post("/webhook", async (req, res) => {
     }
   }
 
-  console.log("🔍 Extracted Knowledge Answer (or fallback query):", knowledgeAnswer);
+  console.log("🔍 Extracted Knowledge Answer:", knowledgeAnswer);
+  console.log("🔗 Extracted Knowledge URI:", knowledgeUri);
 
   if (!knowledgeAnswer) {
     return res.json({
@@ -98,16 +102,34 @@ app.post("/webhook", async (req, res) => {
   console.log("✅ Found matching references:", matchingReferences.length);
 
   if (matchingReferences.length === 0) {
-    return res.json({
-      fulfillment_response: {
-        messages: [{ text: { text: [`No relevant references found for: "${knowledgeAnswer}".`] } }],
-      },
-    });
+    if (knowledgeUri) {
+      return res.json({
+        fulfillment_response: {
+          messages: [
+            {
+              text: {
+                text: [`Reference\n1.[${knowledgeUri}] - Extracted from Knowledge Base\n\n`],
+              },
+            },
+          ],
+        },
+      });
+    } else {
+      return res.json({
+        fulfillment_response: {
+          messages: [{ text: { text: [`No relevant references found for: "${knowledgeAnswer}".`] } }],
+        },
+      });
+    }
   }
 
   // Select up to 3 references
-  const topThree = matchingReferences.slice(0, 3);
+  const topThree = matchingReferences.slice(0, 1);
   let referenceBlock = "Reference\n";
+
+  if (knowledgeUri) {
+    referenceBlock += `1.[${knowledgeUri}] - Extracted from Knowledge Base\n\n`;
+  }
 
   topThree.forEach((row, index) => {
     let fileName = row.Link;
@@ -118,7 +140,7 @@ app.post("/webhook", async (req, res) => {
       ? fileName // If link is already a URL, use it
       : `https://storage.googleapis.com/${bucketName}/${folder}/${encodeURIComponent(fileName)}`;
 
-    referenceBlock += `${index + 1}.[${gcsUrl}] - ${row.APA}\n\n`;
+    referenceBlock += `${index + 2}.[${gcsUrl}] - ${row.APA}\n\n`;
   });
 
   console.log("📄 Constructed reference block:\n", referenceBlock);
