@@ -2,11 +2,12 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const fs = require("fs");
 const csv = require("csv-parser");
+const stringSimilarity = require("string-similarity"); // Helps match similar titles
 
 const app = express();
 app.use(bodyParser.json());
 
-const bucketName = "zydus_faq"; // Your GCS bucket
+const bucketName = "zydus_faq"; // Your Google Cloud Storage bucket
 
 let referencesData = [];
 
@@ -69,12 +70,26 @@ app.post("/webhook", async (req, res) => {
   // Normalize title for better matching
   const titleLc = knowledgeTitle.toLowerCase().replace(/[^\w\s]/g, "");
 
-  // Find exact match from CSV
-  const matchedReferences = referencesData
-    .filter((row) => row.Paper.toLowerCase().replace(/[^\w\s]/g, "") === titleLc)
-    .slice(0, 3); // Limit to 3 references
+  // **Fuzzy Search for Closest Match**
+  let bestMatch = stringSimilarity.findBestMatch(
+    titleLc,
+    referencesData.map((row) => row.Paper.toLowerCase().replace(/[^\w\s]/g, ""))
+  );
 
-  if (matchedReferences.length === 0) {
+  let bestMatchingReferences = [];
+  if (bestMatch.bestMatch.rating > 0.4) {
+    bestMatchingReferences = referencesData
+      .filter(
+        (row) =>
+          stringSimilarity.compareTwoStrings(
+            row.Paper.toLowerCase().replace(/[^\w\s]/g, ""),
+            titleLc
+          ) > 0.4
+      )
+      .slice(0, 3); // **Limit to 3 references**
+  }
+
+  if (bestMatchingReferences.length === 0) {
     return res.json({
       fulfillment_response: {
         messages: [{ text: { text: [`No relevant references found for: "${knowledgeTitle}".`] } }],
@@ -84,7 +99,7 @@ app.post("/webhook", async (req, res) => {
 
   let referenceBlock = "Reference\n";
 
-  matchedReferences.forEach((ref, index) => {
+  bestMatchingReferences.forEach((ref, index) => {
     let gcsUrl = ref.Link.startsWith("http")
       ? ref.Link // If link is already a URL, use it
       : `https://storage.googleapis.com/${bucketName}/${ref.FolderName}/${encodeURIComponent(ref.Link)}`;
