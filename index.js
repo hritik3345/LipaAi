@@ -6,12 +6,12 @@ const csv = require("csv-parser");
 const app = express();
 app.use(bodyParser.json());
 
-const bucketName = "zydus_faq"; // Your Google Cloud Storage bucket
+const bucketName = "zydus_faq"; // Your GCS bucket
 
 let referencesData = [];
 
 /**
- * Load CSV data into memory (with Folder Name Handling)
+ * Load CSV Data (Paper → Link Mapping)
  */
 function loadCSV() {
   return new Promise((resolve, reject) => {
@@ -20,7 +20,7 @@ function loadCSV() {
       .pipe(csv())
       .on("data", (row) => {
         results.push({
-          FolderName: row["Folder Name"]?.trim() || "", // Folder name handling
+          FolderName: row["Folder Name"]?.trim() || "",
           Sn: row["Sn."]?.trim() || "",
           Paper: row["Paper"]?.trim() || "",
           APA: row["APA"]?.trim() || "",
@@ -45,15 +45,14 @@ app.post("/webhook", async (req, res) => {
   let knowledgeTitle = "";
   let knowledgeUri = "";
 
-  // Extract knowledge base title and URI (if available)
+  // Extract knowledge base answer title
   if (
-    req.body.queryResult &&
-    req.body.queryResult.knowledgeAnswers &&
-    req.body.queryResult.knowledgeAnswers.answers &&
-    req.body.queryResult.knowledgeAnswers.answers.length > 0
+    req.body.sessionInfo &&
+    req.body.sessionInfo.parameters &&
+    req.body.sessionInfo.parameters["request.knowledge.answers[0]"]
   ) {
-    knowledgeTitle = req.body.queryResult.knowledgeAnswers.answers[0].answer || "";
-    knowledgeUri = req.body.queryResult.knowledgeAnswers.answers[0].uri || "";
+    knowledgeTitle = req.body.sessionInfo.parameters["request.knowledge.answers[0]"].title || "";
+    knowledgeUri = req.body.sessionInfo.parameters["request.knowledge.answers[0]"].uri || "";
   }
 
   console.log("🔍 Extracted Knowledge Answer Title:", knowledgeTitle);
@@ -71,11 +70,11 @@ app.post("/webhook", async (req, res) => {
   const titleLc = knowledgeTitle.toLowerCase().replace(/[^\w\s]/g, "");
 
   // Find exact match from CSV
-  const matchedReference = referencesData.find((row) => {
-    return row.Paper.toLowerCase().replace(/[^\w\s]/g, "") === titleLc;
-  });
+  const matchedReferences = referencesData
+    .filter((row) => row.Paper.toLowerCase().replace(/[^\w\s]/g, "") === titleLc)
+    .slice(0, 3); // Limit to 3 references
 
-  if (!matchedReference) {
+  if (matchedReferences.length === 0) {
     return res.json({
       fulfillment_response: {
         messages: [{ text: { text: [`No relevant references found for: "${knowledgeTitle}".`] } }],
@@ -83,15 +82,15 @@ app.post("/webhook", async (req, res) => {
     });
   }
 
-  let fileName = matchedReference.Link;
-  let folder = matchedReference.FolderName || "ADD"; // Default to ADD if missing
+  let referenceBlock = "Reference\n";
 
-  // Construct correct GCS URL
-  let gcsUrl = fileName.startsWith("http")
-    ? fileName // If link is already a URL, use it
-    : `https://storage.googleapis.com/${bucketName}/${folder}/${encodeURIComponent(fileName)}`;
+  matchedReferences.forEach((ref, index) => {
+    let gcsUrl = ref.Link.startsWith("http")
+      ? ref.Link // If link is already a URL, use it
+      : `https://storage.googleapis.com/${bucketName}/${ref.FolderName}/${encodeURIComponent(ref.Link)}`;
 
-  let referenceBlock = `Reference\n1.[${gcsUrl}] - ${matchedReference.Paper}\n\n`;
+    referenceBlock += `${index + 1}.[${gcsUrl}] - ${ref.APA}\n\n`;
+  });
 
   console.log("📄 Constructed reference block:\n", referenceBlock);
 
