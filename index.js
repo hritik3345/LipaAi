@@ -6,92 +6,67 @@ const csv = require('csv-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// In-memory array to store CSV data
+// Holds the CSV data
 let referencesData = [];
 
-// 1) Function to load & parse CSV into 'referencesData'
+/**
+ * Loads CSV into memory on startup
+ * (Assuming your CSV is named 'references.csv' in the same directory)
+ */
 function loadCSV() {
   return new Promise((resolve, reject) => {
     const results = [];
-    fs.createReadStream('references.csv') // If your file has a different name, change it here.
+    fs.createReadStream('references.csv')
       .pipe(csv())
-      .on('data', (data) => {
-        // data will be an object with keys matching the columns in the CSV
-        // Example: data = { 'Folder Name': 'ADD', 'Sn.': '1', 'Paper': 'A Multicenter...' }
-        results.push(data);
+      .on('data', (row) => {
+        // row will be something like:
+        // { "Folder Name": "ADD", "Sn.": "1", "Paper": "...", "APA": "...", "Link": "..." }
+        results.push(row);
       })
       .on('end', () => {
         referencesData = results;
         resolve();
       })
-      .on('error', (err) => {
-        reject(err);
-      });
+      .on('error', (err) => reject(err));
   });
 }
 
-// 2) Create a POST /webhook endpoint for Dialogflow CX
+/**
+ * Main webhook endpoint
+ * - Optionally filter your data if needed.
+ * - Builds a text response in the format:
+ *     Reference 
+ *     1.[Link] - Reference APA
+ *     2.[Link] - Reference APA
+ *     ...
+ */
 app.post('/webhook', async (req, res) => {
   try {
-    // Optionally re-load CSV on every request if it changes frequently:
-    // await loadCSV();
+    // If you want to filter by "Folder Name" from user input, do so here:
+    // const folderFilter = req.body.sessionInfo?.parameters?.folderName || '';
+    // const filteredData = referencesData.filter(row => row['Folder Name'] === folderFilter);
 
-    // For example, let's assume you want to show references for Folder = "ADD" only
-    // If you want to display references for ALL rows, skip the filter
-    const folderFilter = "ADD"; // you can also read from req.body if user input is used
-    const filteredData = referencesData.filter(row => row["Folder Name"] === folderFilter);
+    // Or simply show all CSV rows:
+    const filteredData = referencesData;
 
-    // If you want to display *all*, just use referencesData directly
-    // const filteredData = referencesData;
+    // Start the message
+    let referenceText = 'Reference \n';
 
-    // Construct the list in the format required:
-    // 1. [Link] - APA
-    // 2. [Link] - APA
-    // ...
-    const referencesList = filteredData.map((row, index) => {
-      const link = row["Link"] || "No Link";
-      const apa = row["APA"] || "No APA";
-      const serialNumber = index + 1; // or use row["Sn."] if you prefer
-      return `${serialNumber}. [${link}] - ${apa}`;
+    // Build each line as: 1.[Link] - Reference APA
+    filteredData.forEach((row, index) => {
+      const link = row.Link || 'No Link';
+      const apa = row.APA || 'No APA';
+      // Each reference on a new line, with an extra blank line if desired
+      referenceText += `${index + 1}.[${link}] - ${apa}\n\n`;
     });
 
-    // Example "clinograph" link – you can store it in your CSV or define it manually
-    const clinographLink = 'https://example.com/clinograph';
-
-    // Build the final message:
-    const message = `
-Hello Team,
-
-I hope you're doing well.
-
-As discussed in our recent meeting, please find attached the Excel file containing the Paper Title, APA Citation, and Link that should be used in the Lipa AI Reference section. Kindly ensure that each reference follows the specified format:
-
-${referencesList.join('\n')}
-
-Additionally, after each reference, please showcase the Lipaglyn Clinograph from the Clinograph and Monograph folders as follows:
-
-Lipaglyn Clinograph MASLD – ${clinographLink}
-File Name: Lipaglyn Clinograph 2024 V5.PDF (For Your/Developer Reference - FYR)
-
-Sample View
-
-Reference
-${referencesList.join('\n')}
-
-Dear Dr. XYZ,
-
-For more information on Lipaglyn, please refer to the Clinograph for MASLD.
-
-Lipaglyn Clinograph MASLD – ${clinographLink}
-    `.trim();
-
-    // Return the message in Dialogflow CX-structured JSON
+    // Send final response to Dialogflow CX
     return res.json({
       fulfillment_response: {
         messages: [
           {
             text: {
-              text: [message]
+              text: [referenceText]
             }
           }
         ]
@@ -99,28 +74,27 @@ Lipaglyn Clinograph MASLD – ${clinographLink}
     });
 
   } catch (error) {
-    console.error('Error in webhook:', error);
+    console.error('Error building references:', error);
     return res.json({
       fulfillment_response: {
         messages: [
-          {
-            text: {
-              text: ['Something went wrong loading CSV data.']
-            }
-          }
+          { text: { text: ['An error occurred while generating references.'] } }
         ]
       }
     });
   }
 });
 
-// 3) Start the server after CSV is loaded
+// Start server on PORT or default 3000
 const PORT = process.env.PORT || 3000;
-loadCSV().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`Loaded ${referencesData.length} rows from CSV.`);
+loadCSV()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Loaded ${referencesData.length} CSV rows`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to load CSV:', err);
   });
-}).catch(err => {
-  console.error('Failed to load CSV:', err);
-});
+    
