@@ -2,7 +2,6 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const csv = require('csv-parser');
-const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 app.use(bodyParser.json());
@@ -14,7 +13,9 @@ const folderName = "ADD"; // 🔹 Change if files are in a different folder
 // Store CSV data in memory
 let referencesData = [];
 
-
+/**
+ * Load CSV file into memory at startup.
+ */
 function loadCSV() {
   return new Promise((resolve, reject) => {
     const results = [];
@@ -31,7 +32,7 @@ function loadCSV() {
       })
       .on('end', () => {
         referencesData = results;
-        console.log(`Loaded ${referencesData.length} references.`);
+        console.log(`✅ Loaded ${referencesData.length} references.`);
         resolve();
       })
       .on('error', (err) => reject(err));
@@ -43,10 +44,12 @@ function loadCSV() {
  */
 app.post('/webhook', async (req, res) => {
   try {
+    console.log("🔹 Received request:", req.body);
+
     // 1️⃣ **Retrieve the Dialogflow knowledge answer**
     const knowledgeAnswer = req.body.sessionInfo?.parameters?.['$request.knowledge.answers[0]'] || '';
 
-    console.log("Received knowledge answer:", knowledgeAnswer); // 🔍 Debugging
+    console.log("🔍 Received knowledge answer:", knowledgeAnswer);
 
     if (!knowledgeAnswer) {
       return res.json({
@@ -70,7 +73,6 @@ app.post('/webhook', async (req, res) => {
     // 4️⃣ **Limit results to top 3 matches**
     const topThree = matchingReferences.slice(0, 3);
 
-    // If no relevant references are found, return a fallback message
     if (topThree.length === 0) {
       return res.json({
         fulfillment_response: {
@@ -105,7 +107,7 @@ app.post('/webhook', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error processing webhook:', error);
+    console.error('❌ Error processing webhook:', error);
     return res.status(500).json({
       fulfillment_response: {
         messages: [{ text: { text: ['Sorry, something went wrong.'] } }],
@@ -114,15 +116,17 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// **Start the server**
+// **Ensure Cloud Run Uses PORT=8080**
 const PORT = process.env.PORT || 8080;
+
+// **Start the server safely**
 loadCSV()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`✅ Server running on port ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error('Failed to load CSV:', err);
-    console.log('data');
+    console.error('❌ Failed to load CSV:', err);
+    process.exit(1); // Force container to fail visibly
   });
