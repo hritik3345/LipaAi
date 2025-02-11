@@ -126,4 +126,5 @@ loadCSV()
   })
   .catch((err) => {
     console.error('Failed to load CSV:', err);
+    console.log('data');
   });
