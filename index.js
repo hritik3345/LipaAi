@@ -6,12 +6,11 @@ const csv = require('csv-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// Holds the CSV data in memory
+// Store CSV data
 let referencesData = [];
 
 /**
- * Loads CSV into memory on startup.
- * (Assumes your CSV file is named 'references.csv' and is located in the same directory.)
+ * Load CSV into memory at startup
  */
 function loadCSV() {
   return new Promise((resolve, reject) => {
@@ -19,10 +18,17 @@ function loadCSV() {
     fs.createReadStream('references.csv')
       .pipe(csv())
       .on('data', (row) => {
-        results.push(row);
+        results.push({
+          FolderName: row['Folder Name']?.trim() || '',
+          Sn: row['Sn.']?.trim() || '',
+          Paper: row['Paper']?.trim() || '',
+          APA: row['APA']?.trim() || '',
+          Link: row['Link']?.trim() || '',
+        });
       })
       .on('end', () => {
         referencesData = results;
+        console.log(`Loaded ${referencesData.length} references.`);
         resolve();
       })
       .on('error', (err) => reject(err));
@@ -30,84 +36,80 @@ function loadCSV() {
 }
 
 /**
- * Main webhook endpoint.
- * It reads the knowledge answer, filters the CSV data for matching references,
- * limits the results to 3, and returns the response in the exact format:
- *
- * Reference 
- * 1.[Link] - Reference APA
- *
- * 2.[Link] - Reference APA
- *
- * 3.[Link] - Reference APA
+ * Webhook for Dialogflow CX
  */
 app.post('/webhook', async (req, res) => {
   try {
-    // 1) Retrieve the knowledge answer from Dialogflow CX parameters.
-    const knowledgeAnswer =
-      req.body.sessionInfo?.parameters?.['$request.knowledge.answers[0]'] || '';
+    // 1️⃣ **Retrieve the Dialogflow knowledge answer**
+    const knowledgeAnswer = req.body.sessionInfo?.parameters?.['$request.knowledge.answers[0]'] || '';
 
-    // Convert to lowercase for simple substring matching.
+    if (!knowledgeAnswer) {
+      return res.json({
+        fulfillment_response: {
+          messages: [{ text: { text: ['No relevant references found.'] } }],
+        },
+      });
+    }
+
+    // 2️⃣ **Normalize text for better matching**
     const answerLc = knowledgeAnswer.toLowerCase();
 
-    // 2) Filter the CSV data so that only rows that match the knowledge answer are kept.
-    //    This example checks if the answer text is a substring of either the "Paper" or "APA" field.
+    // 3️⃣ **Filter references that match the knowledge base response**
     const matchingReferences = referencesData.filter((row) => {
-      const paperLc = (row.Paper || '').toLowerCase();
-      const apaLc = (row.APA || '').toLowerCase();
+      const paperLc = row.Paper.toLowerCase();
+      const apaLc = row.APA.toLowerCase();
       return paperLc.includes(answerLc) || apaLc.includes(answerLc);
     });
 
-    // 3) Limit the output to the top 3 matching references.
+    // 4️⃣ **Limit results to top 3 matches**
     const topThree = matchingReferences.slice(0, 3);
 
-    // 4) Build the reference block text.
-    // The output will be in the format:
-    //
-    // Reference 
-    // 1.[actual-link] - [Actual APA citation]
-    //
-    // 2.[actual-link] - [Actual APA citation]
-    //
-    // 3.[actual-link] - [Actual APA citation]
+    // If no relevant references are found, return a fallback message
+    if (topThree.length === 0) {
+      return res.json({
+        fulfillment_response: {
+          messages: [{ text: { text: ['No relevant references found.'] } }],
+        },
+      });
+    }
+
+    // 5️⃣ **Construct the reference block**
     let referenceBlock = 'Reference\n';
     topThree.forEach((row, index) => {
-      const link = row.Link || '[No Link]';
-      const apa = row.APA || '[No APA]';
-      referenceBlock += `${index + 1}.[${link}] - ${apa}\n\n`;
+      const link = row.Link ? `[${row.Link}]` : '[No Link Found]';
+      const apa = row.APA || '[No APA Found]';
+      referenceBlock += `${index + 1}.${link} - ${apa}\n\n`;
     });
 
-    // 5) Return the final reference block as the webhook response in Dialogflow CX format.
+    // 6️⃣ **Return response in Dialogflow CX format**
     return res.json({
       fulfillment_response: {
         messages: [
           {
             text: {
-              text: [referenceBlock]
-            }
-          }
-        ]
-      }
+              text: [referenceBlock],
+            },
+          },
+        ],
+      },
     });
+
   } catch (error) {
-    console.error('Error in /webhook:', error);
+    console.error('Error processing webhook:', error);
     return res.status(500).json({
       fulfillment_response: {
-        messages: [
-          { text: { text: ['Sorry, something went wrong.'] } }
-        ]
-      }
+        messages: [{ text: { text: ['Sorry, something went wrong.'] } }],
+      },
     });
   }
 });
 
-// Start the server on PORT (default is 3000)
+// **Start the server**
 const PORT = process.env.PORT || 3000;
 loadCSV()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
-      console.log(`Loaded ${referencesData.length} CSV rows.`);
     });
   })
   .catch((err) => {
