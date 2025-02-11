@@ -117,7 +117,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 // **Start the server**
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 loadCSV()
   .then(() => {
     app.listen(PORT, () => {
