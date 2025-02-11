@@ -6,127 +6,105 @@ const csv = require('csv-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// GCS Configuration
-const bucketName = "zydus_faq"; // 🔹 Change this to your actual bucket name
-const folderName = "ADD"; // 🔹 Change if files are in a different folder
+const bucketName = "zydus_faq"; 
+const folderName = "ADD";
 
-// Store CSV data in memory
 let referencesData = [];
 
 /**
- * Load CSV file into memory at startup.
+ * Load CSV file
  */
 function loadCSV() {
-  return new Promise((resolve, reject) => {
-    const results = [];
-    fs.createReadStream('references.csv')
-      .pipe(csv())
-      .on('data', (row) => {
-        results.push({
-          FolderName: row['Folder Name']?.trim() || '',
-          Sn: row['Sn.']?.trim() || '',
-          Paper: row['Paper']?.trim() || '',
-          APA: row['APA']?.trim() || '',
-          Link: row['Link']?.trim() || '',
-        });
-      })
-      .on('end', () => {
-        referencesData = results;
-        console.log(`✅ Loaded ${referencesData.length} references.`);
-        resolve();
-      })
-      .on('error', (err) => reject(err));
-  });
+    return new Promise((resolve, reject) => {
+        const results = [];
+        fs.createReadStream('references.csv')
+            .pipe(csv())
+            .on('data', (row) => {
+                console.log("📄 CSV Row Loaded:", row);
+
+                results.push({
+                    FolderName: row['Folder Name']?.trim() || '',
+                    Sn: row['Sn.']?.trim() || '',
+                    Paper: row['Paper']?.trim() || '',
+                    APA: row['APA']?.trim() || '',
+                    Link: row['Link']?.trim() || '',
+                });
+            })
+            .on('end', () => {
+                referencesData = results;
+                console.log(`✅ Loaded ${referencesData.length} references from CSV.`);
+                resolve();
+            })
+            .on('error', (err) => {
+                console.error("❌ Error reading CSV:", err);
+                reject(err);
+            });
+    });
 }
 
 /**
  * Webhook for Dialogflow CX
  */
 app.post('/webhook', async (req, res) => {
-  try {
-    console.log("🔹 Received request:", req.body);
+    console.log("🔹 Full Request Body:", JSON.stringify(req.body, null, 2));
 
-    // 1️⃣ **Retrieve the Dialogflow knowledge answer**
     const knowledgeAnswer = req.body.sessionInfo?.parameters?.['$request.knowledge.answers[0]'] || '';
-
     console.log("🔍 Received knowledge answer:", knowledgeAnswer);
 
     if (!knowledgeAnswer) {
-      return res.json({
-        fulfillment_response: {
-          messages: [{ text: { text: ['No relevant references found.'] } }],
-        },
-      });
+        return res.json({
+            fulfillment_response: {
+                messages: [{ text: { text: ['No relevant references found. (Missing Knowledge Answer)'] } }],
+            },
+        });
     }
 
-    // 2️⃣ **Normalize text for better matching**
-    const answerLc = knowledgeAnswer.toLowerCase();
+    const answerLc = knowledgeAnswer.toLowerCase().replace(/[^\w\s]/g, "");
 
-    // 3️⃣ **Filter references that match the knowledge base response**
     const matchingReferences = referencesData.filter((row) => {
-      const paperLc = row.Paper.toLowerCase();
-      const apaLc = row.APA.toLowerCase();
-      const answerWords = answerLc.split(" "); // Split into words for better match
-      return answerWords.some(word => paperLc.includes(word) || apaLc.includes(word));
+        const paperLc = row.Paper.toLowerCase().replace(/[^\w\s]/g, "");
+        const apaLc = row.APA.toLowerCase().replace(/[^\w\s]/g, "");
+
+        const answerWords = answerLc.split(" ");
+        return answerWords.some(word => paperLc.includes(word) || apaLc.includes(word));
     });
 
-    // 4️⃣ **Limit results to top 3 matches**
+    if (matchingReferences.length === 0) {
+        console.log("⚠️ No matching references found for:", knowledgeAnswer);
+        console.log("🔍 Here is what we searched in:", referencesData);
+
+        return res.json({
+            fulfillment_response: {
+                messages: [{ text: { text: [`No relevant references found for: "${knowledgeAnswer}".`] } }],
+            },
+        });
+    }
+
+    let referenceBlock = 'Reference\n';
     const topThree = matchingReferences.slice(0, 3);
 
-    if (topThree.length === 0) {
-      return res.json({
-        fulfillment_response: {
-          messages: [{ text: { text: ['No relevant references found.'] } }],
-        },
-      });
-    }
-
-    // 5️⃣ **Construct the reference block with GCS URLs**
-    let referenceBlock = 'Reference\n';
     topThree.forEach((row, index) => {
-      const fileName = row.Link.trim();
-      const gcsUrl = fileName 
-        ? `https://storage.googleapis.com/${bucketName}/${folderName}/${encodeURIComponent(fileName)}`
-        : '[No Link Found]';
-      
-      const apa = row.APA || '[No APA Found]';
-      referenceBlock += `${index + 1}.[${gcsUrl}] - ${apa}\n\n`;
+        const fileName = row.Link.trim();
+        const gcsUrl = fileName ? `https://storage.googleapis.com/${bucketName}/${folderName}/${encodeURIComponent(fileName)}` : '[No Link Found]';
+        const apa = row.APA || '[No APA Found]';
+        referenceBlock += `${index + 1}.[${gcsUrl}] - ${apa}\n\n`;
     });
 
-    // 6️⃣ **Return response in Dialogflow CX format**
     return res.json({
-      fulfillment_response: {
-        messages: [
-          {
-            text: {
-              text: [referenceBlock],
-            },
-          },
-        ],
-      }
+        fulfillment_response: {
+            messages: [{ text: { text: [referenceBlock] } }],
+        },
     });
-
-  } catch (error) {
-    console.error('❌ Error processing webhook:', error);
-    return res.status(500).json({
-      fulfillment_response: {
-        messages: [{ text: { text: ['Sorry, something went wrong.'] } }],
-      },
-    });
-  }
 });
 
-// **Ensure Cloud Run Uses PORT=8080**
 const PORT = process.env.PORT || 8080;
-
-// **Start the server safely**
 loadCSV()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`✅ Server running on port ${PORT}`);
+    .then(() => {
+        app.listen(PORT, () => {
+            console.log(`✅ Server running on port ${PORT}`);
+        });
+    })
+    .catch((err) => {
+        console.error('❌ Failed to load CSV:', err);
+        process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error('❌ Failed to load CSV:', err);
-    process.exit(1); // Force container to fail visibly
-  });
