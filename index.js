@@ -14,9 +14,7 @@ const folderName = "ADD"; // 🔹 Change if files are in a different folder
 // Store CSV data in memory
 let referencesData = [];
 
-/**
- * Load CSV file into memory at startup.
- */
+
 function loadCSV() {
   return new Promise((resolve, reject) => {
     const results = [];
