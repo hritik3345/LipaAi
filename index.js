@@ -137,7 +137,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 // Start the server after loading CSV and computing embeddings
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 loadCSVAndComputeEmbeddings()
   .then(() => {
     app.listen(PORT, () => {
