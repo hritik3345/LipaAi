@@ -113,7 +113,7 @@ app.post("/webhook", async (req, res) => {
         messages: [{ text: { text: [referenceBlock] } }],
       },
     });
-  }, 700); // **Introduced a 400ms delay**
+  }, 1000); // **Introduced a 400ms delay**
 });
 
 // Cloud Run Port
