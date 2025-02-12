@@ -47,7 +47,7 @@ app.post('/webhook', async (req, res) => {
   console.log("Incoming request payload:", JSON.stringify(req.body, null, 2));
 
   // Check if the knowledge answer exists in the payload; adjust the path if needed.
-  let bucketAnswer = "Sorry, I couldn't find an answer in our knowledge base.";
+  let bucketAnswer = "Reference-";
   if (
     req.body.knowledge &&
     Array.isArray(req.body.knowledge.answers) &&
@@ -57,7 +57,7 @@ app.post('/webhook', async (req, res) => {
   }
 
   // Retrieve the user's query text.
-  const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "default query";
+  const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "https://pubmed.ncbi.nlm.nih.gov/24138536/";
 
   // Query the Google Custom Search API to get an external link.
   const externalLink = await getExternalLink(userQuery);
