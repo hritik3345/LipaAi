@@ -4,18 +4,19 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 
 const app = express();
+// Cloud Run sets the PORT environment variable (default is 8080)
 const port = process.env.PORT || 8080;
 
-// Replace these placeholders with your actual credentials.
-const GOOGLE_API_KEY = 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
-const GOOGLE_CSE_ID = '01e2839d820504feb';
-
-// Middleware to parse JSON bodies from Dialogflow CX
 app.use(bodyParser.json());
 
+// It’s a good idea to store sensitive credentials in environment variables
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
+const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || '01e2839d820504feb';
+
 /**
- * Function: getExternalLink
- * Purpose: Calls the Google Custom Search API with the given query and returns the first matching link.
+ * getExternalLink(query)
+ * Calls the Google Custom Search API using the provided query,
+ * and returns the first matching link.
  */
 async function getExternalLink(query) {
   try {
@@ -29,36 +30,35 @@ async function getExternalLink(query) {
 
     if (response.data.items && response.data.items.length > 0) {
       return response.data.items[0].link;
-    } else {
-      return null;
     }
+    return null;
   } catch (error) {
-    console.error('Error during Google Custom Search:', error);
+    console.error('Error calling Google Custom Search API:', error.message);
     return null;
   }
 }
 
 /**
  * Webhook endpoint for Dialogflow CX.
- * This code assumes that the agent sends the answer from your datastore (bucket)
- * in the field knowledge.answers[0] and the user's query in a field (e.g., queryResult.queryText).
+ * Assumes the bucket answer is provided in knowledge.answers[0]
+ * and the user query is in queryResult.queryText.
  */
 app.post('/webhook', async (req, res) => {
   try {
-    // Retrieve the answer generated from your bucket (via knowledge base)
-    // Adjust the property path as per your actual request payload.
-    const bucketAnswer = (req.body.knowledge && req.body.knowledge.answers && req.body.knowledge.answers[0])
+    // Retrieve the answer generated from your datastore/bucket
+    const bucketAnswer = (req.body.knowledge &&
+      req.body.knowledge.answers &&
+      req.body.knowledge.answers[0])
       ? req.body.knowledge.answers[0]
       : "Sorry, I couldn't find an answer in our knowledge base.";
 
-    // Retrieve the user's query text.
-    // Depending on your CX configuration, you might extract the query from a different field.
+    // Retrieve the user's query text from the request payload
     const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "default query";
 
-    // Query Google Custom Search API to get an external link related to the query.
+    // Get an external link using Google Custom Search API based on the query
     const externalLink = await getExternalLink(userQuery);
 
-    // Combine the bucket answer with the external link.
+    // Combine the bucket answer with the external link (if available)
     let fulfillmentText = bucketAnswer;
     if (externalLink) {
       fulfillmentText += `\n\nFor more details, please visit: ${externalLink}`;
@@ -66,7 +66,7 @@ app.post('/webhook', async (req, res) => {
       fulfillmentText += "\n\n(No external link found.)";
     }
 
-    // Return the fulfillment response to Dialogflow CX.
+    // Send the response in the format Dialogflow CX expects
     res.json({
       fulfillment_response: {
         messages: [
@@ -79,9 +79,14 @@ app.post('/webhook', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Error in webhook processing:", error);
-    res.status(500).send("Webhook error");
+    console.error('Webhook error:', error);
+    res.status(500).send('Webhook error');
   }
+});
+
+// A simple route to verify that the container is running and listening on the correct port
+app.get('/', (req, res) => {
+  res.send('Hello, Cloud Run is working!');
 });
 
 // Start the Express server
