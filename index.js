@@ -4,20 +4,19 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 
 const app = express();
-// Cloud Run sets the PORT environment variable; default to 8080 if not provided.
+// Use the PORT environment variable (set by Cloud Run) or default to 8080.
 const port = process.env.PORT || 8080;
 
-// Middleware to parse JSON requests
 app.use(bodyParser.json());
 
-// Use environment variables for sensitive data.
+// Use environment variables for your API credentials.
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
-const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
+const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || '01e2839d820504feb';
 
 /**
  * getExternalLink(query)
- * Calls the Google Custom Search API using the provided query,
- * and returns the first matching external link.
+ * Calls the Google Custom Search API with the provided query and returns
+ * the first matching external link.
  */
 async function getExternalLink(query) {
   try {
@@ -40,23 +39,23 @@ async function getExternalLink(query) {
 
 /**
  * Webhook endpoint for Dialogflow CX.
- * Assumes the bucket answer is provided in knowledge.answers[0]
+ * Assumes that the bucket answer is provided in knowledge.answers[0]
  * and the user query is in queryResult.queryText.
  */
 app.post('/webhook', async (req, res) => {
   try {
-    // Retrieve the answer generated from your bucket/datastore
+    // Retrieve the answer generated from your bucket/datastore.
     const bucketAnswer =
       req.body.knowledge &&
-        req.body.knowledge.answers &&
-        req.body.knowledge.answers[0]
+      req.body.knowledge.answers &&
+      req.body.knowledge.answers[0]
         ? req.body.knowledge.answers[0]
         : "Sorry, I couldn't find an answer in our knowledge base.";
 
-    // Retrieve the user's query text from the request payload
+    // Retrieve the user's query text.
     const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "default query";
 
-    // Query the Google Custom Search API to obtain an external link related to the user's query.
+    // Query the Google Custom Search API to get an external link.
     const externalLink = await getExternalLink(userQuery);
 
     // Combine the bucket answer with the external link.
@@ -85,12 +84,12 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// A simple route to verify that the container is running and listening on the expected port.
+// A simple GET endpoint to verify that the server is running.
 app.get('/', (req, res) => {
   res.send('Hello, Cloud Run is working!');
 });
 
-// Start the server and listen on the provided port.
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+// Bind explicitly to 0.0.0.0 so that Cloud Run can access your service.
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server is running and listening on port ${port}`);
 });
