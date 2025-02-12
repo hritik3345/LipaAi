@@ -1,22 +1,28 @@
-// index.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
-
 const app = express();
-// Use the PORT environment variable (Cloud Run sets this to 8080 by default)
+
+// Use the PORT environment variable
 const port = process.env.PORT || 8080;
 
+// Middleware
 app.use(bodyParser.json());
 
-// Set your credentials via environment variables for security.
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
-const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || '01e2839d820504feb';
+// Environment variables validation
+const GOOGLE_API_KEY = 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
+const GOOGLE_CSE_ID = '01e2839d820504feb';
+
+if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) {
+  console.error('Missing required environment variables: GOOGLE_API_KEY and/or GOOGLE_CSE_ID');
+  process.exit(1);
+}
 
 /**
  * getExternalLink(query)
- * Calls the Google Custom Search API using the provided query,
- * and returns the first matching external link.
+ * Calls the Google Custom Search API using the provided query
+ * @param {string} query - The search query
+ * @returns {Promise<string|null>} The first search result link or null
  */
 async function getExternalLink(query) {
   try {
@@ -24,75 +30,109 @@ async function getExternalLink(query) {
       params: {
         key: GOOGLE_API_KEY,
         cx: GOOGLE_CSE_ID,
-        q: query
-      }
+        q: query,
+        num: 1 // Limit to 1 result for efficiency
+      },
+      timeout: 5000 // 5 second timeout
     });
-    if (response.data.items && response.data.items.length > 0) {
+
+    if (response.data.items?.[0]?.link) {
       return response.data.items[0].link;
     }
+
+    console.log('No search results found for query:', query);
     return null;
   } catch (error) {
-    console.error('Error calling Google Custom Search API:', error.message);
+    console.error('Error calling Google Custom Search API:', {
+      message: error.message,
+      query,
+      status: error.response?.status,
+      data: error.response?.data
+    });
     return null;
   }
 }
 
 /**
- * Webhook endpoint for Dialogflow CX.
- * Assumes that the bucket answer is provided in knowledge.answers[0]
- * and the user query is in queryResult.queryText.
+ * Webhook endpoint for Dialogflow CX
  */
 app.post('/webhook', async (req, res) => {
-  // Log the incoming payload for debugging purposes
-  console.log("Incoming request payload:", JSON.stringify(req.body, null, 2));
+  try {
+    console.log('Incoming webhook request:', {
+      session: req.body.sessionInfo?.session,
+      query: req.body.text,
+      page: req.body.pageInfo?.currentPage
+    });
 
-  // Check if the knowledge answer exists in the payload; adjust the path if needed.
-  let bucketAnswer = "Reference-";
-  if (
-    req.body.knowledge &&
-    Array.isArray(req.body.knowledge.answers) &&
-    req.body.knowledge.answers.length > 0
-  ) {
-    bucketAnswer = req.body.knowledge.answers[0];
-  }
+    // Extract the query from the correct location in Dialogflow CX v3 request
+    const userQuery = req.body.text || '';
 
-  // Retrieve the user's query text.
-  const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "https://pubmed.ncbi.nlm.nih.gov/24138536/";
+    // Get knowledge base answer if available
+    let answer = '';
+    if (req.body.knowledge?.answers?.[0]) {
+      answer = req.body.knowledge.answers[0];
+    }
 
-  // Query the Google Custom Search API to get an external link.
-  const externalLink = await getExternalLink(userQuery);
+    // Get external link
+    const externalLink = await getExternalLink(userQuery);
 
-  // Combine the bucket answer with the external link.
-  let fulfillmentText = bucketAnswer;
-  if (externalLink) {
-    fulfillmentText += `\n\n ${externalLink}`;
-  } else {
-    fulfillmentText += "\n\n(No external link found.)";
-  }
+    // Construct response
+    let responseText = answer || 'I apologize, but I couldn\'t find specific information about that.';
 
-  // Log the combined fulfillment text for debugging.
-  console.log("Fulfillment Text:", fulfillmentText);
+    if (externalLink) {
+      responseText += `\n\nYou can find more information here: ${externalLink}`;
+    }
 
-  // Return the response in the format expected by Dialogflow CX.
-  res.json({
-    fulfillment_response: {
-      messages: [
-        {
+    // Send response in Dialogflow CX v3 format
+    res.json({
+      fulfillmentResponse: {
+        messages: [{
           text: {
-            text: [fulfillmentText]
+            text: [responseText]
           }
+        }]
+      }
+    });
+
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({
+      fulfillmentResponse: {
+        messages: [{
+          text: {
+            text: ['I apologize, but I encountered an error while processing your request.']
+          }
+        }]
+      }
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    fulfillmentResponse: {
+      messages: [{
+        text: {
+          text: ['An unexpected error occurred.']
         }
-      ]
+      }]
     }
   });
 });
 
-// A simple GET endpoint to verify that the container is running.
-app.get('/', (req, res) => {
-  res.send('Hello, Cloud Run is working!');
-});
-
-// Bind explicitly to 0.0.0.0 so Cloud Run can access your service.
+// Start server
 app.listen(port, '0.0.0.0', () => {
-  console.log(`Server is running and listening on port ${port}`);
+  console.log(`Server running on port ${port}`);
+  console.log('Environment:', {
+    hasApiKey: !!GOOGLE_API_KEY,
+    hasCseId: !!GOOGLE_CSE_ID,
+    nodeEnv: process.env.NODE_ENV
+  });
 });
