@@ -65,7 +65,7 @@ app.post('/webhook', async (req, res) => {
   // Combine the bucket answer with the external link.
   let fulfillmentText = bucketAnswer;
   if (externalLink) {
-    fulfillmentText += `\n\nFor more details, please visit: ${externalLink}`;
+    fulfillmentText += `\n\n ${externalLink}`;
   } else {
     fulfillmentText += "\n\n(No external link found.)";
   }
