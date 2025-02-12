@@ -50,10 +50,10 @@ app.post('/webhook', async (req, res) => {
       req.body.knowledge.answers &&
       req.body.knowledge.answers[0]
         ? req.body.knowledge.answers[0]
-        : "Sorry, I couldn't find an answer in our knowledge base.";
+        : "Reference-";
 
     // Retrieve the user's query text.
-    const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "default query";
+    const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "https://pubmed.ncbi.nlm.nih.gov/25820046/";
 
     // Query the Google Custom Search API to get an external link.
     const externalLink = await getExternalLink(userQuery);
