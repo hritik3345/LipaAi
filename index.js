@@ -72,7 +72,7 @@ app.post('/webhook', async (req, res) => {
     console.log('🔗 External link result:', externalLink);
 
     // Construct response
-    let responseText = bucketAnswer || 'I apologize, but I couldn\'t find specific information about that.';
+    let responseText = bucketAnswer;
     if (externalLink) {
       responseText += `\n\nYou can find more information here: ${externalLink}`;
     }
