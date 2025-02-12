@@ -25,42 +25,17 @@ if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) {
 }
 
 async function getExternalLink(query) {
-  console.log('🔍 Attempting Google search with query:', query);
-
   try {
-    console.log('Making request to Google API...');
     const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
-      params: {
-        key: GOOGLE_API_KEY,
-        cx: GOOGLE_CSE_ID,
-        q: query,
-        num: 1
-      },
-      timeout: 5000
+      params: { key: GOOGLE_API_KEY, cx: GOOGLE_CSE_ID, q: query }
     });
-
-    console.log('Google API response status:', response.status);
-    console.log('Response data structure:', Object.keys(response.data));
-
-    if (response.data.items?.[0]?.link) {
-      console.log('✅ Found link:', response.data.items[0].link);
-      return response.data.items[0].link;
-    }
-
-    console.log('⚠️ No search results found');
-    return null;
+    console.log("API Response:", JSON.stringify(response.data, null, 2)); // Add this line
+    return response.data.items?.[0]?.link || null;
   } catch (error) {
-    console.error('❌ Google API Error:', {
-      message: error.message,
-      query: query,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data
-    });
+    console.error('API Error:', error.response?.data || error.message);
     return null;
   }
 }
-
 app.post('/webhook', async (req, res) => {
   console.log('\n🎯 Webhook called - Request body:', JSON.stringify(req.body, null, 2));
 
@@ -70,11 +45,14 @@ app.post('/webhook', async (req, res) => {
       throw new Error('Empty request body');
     }
 
+    let bucketAnswer = "Sorry, no answer found.";
+  const knowledgeAnswers = req.body.knowledgeAnswers?.answers;
+  if (knowledgeAnswers && knowledgeAnswers.length > 0) {
+    bucketAnswer = knowledgeAnswers[0].answer;
+  }
+
     // Extract query - try different possible locations in the request
-    const userQuery = req.body.text ||
-      req.body.queryResult?.queryText ||
-      req.body.sessionInfo?.parameters?.query ||
-      '';
+    const userQuery = req.body.text || req.body.queryResult?.queryText || "https://pubmed.ncbi.nlm.nih.gov/24138536/";
 
     console.log('📝 Extracted user query:', userQuery);
 
@@ -83,18 +61,18 @@ app.post('/webhook', async (req, res) => {
     }
 
     // Get knowledge base answer if available
-    let answer = '';
-    if (req.body.knowledge?.answers?.[0]) {
-      answer = req.body.knowledge.answers[0];
-      console.log('📚 Found knowledge base answer:', answer);
-    }
+    // let answer = '';
+    // if (req.body.knowledge?.answers?.[0]) {
+    //   answer = req.body.knowledge.answers[0];
+    //   console.log('📚 Found knowledge base answer:', answer);
+    // }
 
     console.log('🔎 Calling Google Search API...');
     const externalLink = await getExternalLink(userQuery);
     console.log('🔗 External link result:', externalLink);
 
     // Construct response
-    let responseText = answer || 'I apologize, but I couldn\'t find specific information about that.';
+    let responseText = bucketAnswer || 'I apologize, but I couldn\'t find specific information about that.';
     if (externalLink) {
       responseText += `\n\nYou can find more information here: ${externalLink}`;
     }
