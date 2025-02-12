@@ -50,10 +50,10 @@ app.post('/webhook', async (req, res) => {
       req.body.knowledge.answers &&
       req.body.knowledge.answers[0]
         ? req.body.knowledge.answers[0]
-        : "Reference-";
+        : "For more details, please visit:";
 
     // Retrieve the user's query text.
-    const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "https://pubmed.ncbi.nlm.nih.gov/25820046/";
+    const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "https://pubmed.ncbi.nlm.nih.gov/";
 
     // Query the Google Custom Search API to get an external link.
     const externalLink = await getExternalLink(userQuery);
@@ -61,7 +61,7 @@ app.post('/webhook', async (req, res) => {
     // Combine the bucket answer with the external link.
     let fulfillmentText = bucketAnswer;
     if (externalLink) {
-      fulfillmentText += `\n\nFor more details, please visit: ${externalLink}`;
+      fulfillmentText += `\n\n ${externalLink}`;
     } else {
       fulfillmentText += "\n\n(No external link found.)";
     }
