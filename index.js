@@ -45,7 +45,7 @@ app.post('/webhook', async (req, res) => {
       throw new Error('Empty request body');
     }
 
-    let bucketAnswer = "Sorry, no answer found.";
+    let bucketAnswer = "";
   const knowledgeAnswers = req.body.knowledgeAnswers?.answers;
   if (knowledgeAnswers && knowledgeAnswers.length > 0) {
     bucketAnswer = knowledgeAnswers[0].answer;
