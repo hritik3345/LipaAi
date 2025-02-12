@@ -1,17 +1,30 @@
 {
   "name": "dialogflow-cx-webhook",
   "version": "1.0.0",
-  "description": "",
+  "description": "LipaAi",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/storage": "^7.15.1",
+    "axios": "^1.7.9",
     "body-parser": "^1.20.3",
     "csv-parser": "^3.2.0",
+    "csvtojson": "^2.0.10",
     "express": "^4.21.2"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hritik3345/LipaAi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hritik3345/LipaAi/issues"
+  },
+  "homepage": "https://github.com/hritik3345/LipaAi#readme"
 }
