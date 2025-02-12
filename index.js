@@ -1,74 +1,90 @@
+// index.js
 const express = require('express');
-const { Storage } = require('@google-cloud/storage');
-const csv = require('csvtojson');
+const bodyParser = require('body-parser');
+const axios = require('axios');
 
 const app = express();
-app.use(express.json());
+const port = process.env.PORT || 8080;
 
-// Initialize the Cloud Storage client
-const storage = new Storage();
+// Replace these placeholders with your actual credentials.
+const GOOGLE_API_KEY = 'AIzaSyBZShx2LBjG_9NjPKMLSv9xK_6pet1AP2w';
+const GOOGLE_CSE_ID = '01e2839d820504feb';
 
-// Configure your bucket name and CSV file path
-const BUCKET_NAME = 'zydus_faq';
-const CSV_FILE_PATH = 'https://storage.googleapis.com/zydus_faq/references.csv';
-
-/**
- * Function to fetch and parse CSV data from Cloud Storage.
- */
-async function getCsvData() {
-  // Download the CSV file as a buffer
-  const file = storage.bucket(BUCKET_NAME).file(CSV_FILE_PATH);
-  const data = await file.download();
-  // Parse CSV data to JSON
-  const jsonArray = await csv().fromString(data.toString());
-  return jsonArray;
-}
+// Middleware to parse JSON bodies from Dialogflow CX
+app.use(bodyParser.json());
 
 /**
- * Function to find a matching record based on criteria.
- * For example, you may want to match based on Folder Name and Sn.
+ * Function: getExternalLink
+ * Purpose: Calls the Google Custom Search API with the given query and returns the first matching link.
  */
-function findMatchingRecord(dataArray, folderName, sn) {
-  return dataArray.find(record => {
-    // Adjust property names as they appear in your CSV (they may include spaces)
-    return record['Folder Name'] === folderName && record['Sn.'] === sn;
-  });
-}
-
-// Webhook endpoint
-app.post('/', async (req, res) => {
+async function getExternalLink(query) {
   try {
-    // Extract parameters from Dialogflow CX request
-    // (Adjust the parameter names based on your Dialogflow setup.)
-    const folderName = req.body.queryResult.parameters.folder_name;
-    const sn = req.body.queryResult.parameters.sn;
-    
-    // Fetch the CSV data (you may choose to cache this if the file rarely changes)
-    const csvData = await getCsvData();
-    
-    // Find the matching record
-    const match = findMatchingRecord(csvData, folderName, sn);
-    
-    let fulfillmentText = "Sorry, no matching link was found.";
-    if (match && match.Link) {
-      fulfillmentText = `I found the external link for you: ${match.Link}`;
+    const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
+      params: {
+        key: GOOGLE_API_KEY,
+        cx: GOOGLE_CSE_ID,
+        q: query
+      }
+    });
+
+    if (response.data.items && response.data.items.length > 0) {
+      return response.data.items[0].link;
+    } else {
+      return null;
     }
-    
-    // Return the response in Dialogflow CX webhook format
+  } catch (error) {
+    console.error('Error during Google Custom Search:', error);
+    return null;
+  }
+}
+
+/**
+ * Webhook endpoint for Dialogflow CX.
+ * This code assumes that the agent sends the answer from your datastore (bucket)
+ * in the field knowledge.answers[0] and the user's query in a field (e.g., queryResult.queryText).
+ */
+app.post('/webhook', async (req, res) => {
+  try {
+    // Retrieve the answer generated from your bucket (via knowledge base)
+    // Adjust the property path as per your actual request payload.
+    const bucketAnswer = (req.body.knowledge && req.body.knowledge.answers && req.body.knowledge.answers[0])
+      ? req.body.knowledge.answers[0]
+      : "Sorry, I couldn't find an answer in our knowledge base.";
+
+    // Retrieve the user's query text.
+    // Depending on your CX configuration, you might extract the query from a different field.
+    const userQuery = (req.body.queryResult && req.body.queryResult.queryText) || "default query";
+
+    // Query Google Custom Search API to get an external link related to the query.
+    const externalLink = await getExternalLink(userQuery);
+
+    // Combine the bucket answer with the external link.
+    let fulfillmentText = bucketAnswer;
+    if (externalLink) {
+      fulfillmentText += `\n\nFor more details, please visit: ${externalLink}`;
+    } else {
+      fulfillmentText += "\n\n(No external link found.)";
+    }
+
+    // Return the fulfillment response to Dialogflow CX.
     res.json({
       fulfillment_response: {
         messages: [
           {
-            text: { text: [fulfillmentText] }
+            text: {
+              text: [fulfillmentText]
+            }
           }
         ]
       }
     });
-  } catch (err) {
-    console.error("Error processing request:", err);
-    res.status(500).send("Internal Server Error");
+  } catch (error) {
+    console.error("Error in webhook processing:", error);
+    res.status(500).send("Webhook error");
   }
 });
 
-// Export the Express app as a Cloud Function
-module.exports = app;
+// Start the Express server
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
