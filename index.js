@@ -74,7 +74,8 @@ app.post('/webhook', async (req, res) => {
     // Construct response
     let responseText = bucketAnswer;
     if (externalLink) {
-      responseText += `\n\nYou can find more information here: target="_blank">${externalLink}</a>`;
+     responseText += `\n\nYou can find more information here: <a href="${externalLink}" target="_blank">${externalLink}</a>`;
+
     }
 
     console.log('📤 Sending response:', responseText);
