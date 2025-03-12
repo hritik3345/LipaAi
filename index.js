@@ -1,4 +1,4 @@
-  const express = require('express');
+const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const app = express();
@@ -36,6 +36,7 @@ async function getExternalLink(query) {
     return null;
   }
 }
+
 app.post('/webhook', async (req, res) => {
   console.log('\n🎯 Webhook called - Request body:', JSON.stringify(req.body, null, 2));
 
@@ -46,26 +47,31 @@ app.post('/webhook', async (req, res) => {
     }
 
     let bucketAnswer = "";
-  const knowledgeAnswers = req.body.knowledgeAnswers?.answers;
-  if (knowledgeAnswers && knowledgeAnswers.length > 0) {
-    bucketAnswer = knowledgeAnswers[0].answer;
-  }
+    const knowledgeAnswers = req.body.knowledgeAnswers?.answers;
+    if (knowledgeAnswers && knowledgeAnswers.length > 0) {
+      bucketAnswer = knowledgeAnswers[0].answer;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  1) CITATION LOGIC: Detect [citation start] ... [citation end]
+    // ─────────────────────────────────────────────────────────────────────
+    let citation = '';
+    const citationRegex = /\[citation start\](.+?)\[citation end\]/s;
+    const match = bucketAnswer.match(citationRegex);
+    if (match && match[1]) {
+      citation = match[1].trim(); 
+      // Remove the entire citation block from the main answer
+      bucketAnswer = bucketAnswer.replace(citationRegex, '').trim();
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     // Extract query - try different possible locations in the request
     const userQuery = req.body.text || req.body.queryResult?.queryText || "https://pubmed.ncbi.nlm.nih.gov/24138536/";
-
     console.log('📝 Extracted user query:', userQuery);
 
     if (!userQuery) {
       console.warn('⚠️ No user query found in request');
     }
-
-    // Get knowledge base answer if available
-    // let answer = '';
-    // if (req.body.knowledge?.answers?.[0]) {
-    //   answer = req.body.knowledge.answers[0];
-    //   console.log('📚 Found knowledge base answer:', answer);
-    // }
 
     console.log('🔎 Calling Google Search API...');
     const externalLink = await getExternalLink(userQuery);
@@ -73,9 +79,17 @@ app.post('/webhook', async (req, res) => {
 
     // Construct response
     let responseText = bucketAnswer;
-    if (externalLink) {
-     responseText += `\n\nReference: <a href="${externalLink}" target="_blank">${externalLink}</a>`;
 
+    // Keep your existing reference logic intact
+    if (externalLink) {
+      responseText += `\n\nReference: <a href="${externalLink}" target="_blank">${externalLink}</a>`;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  2) Append the citation to the final response, if found
+    // ─────────────────────────────────────────────────────────────────────
+    if (citation) {
+      responseText += `\n\nCitation: ${citation}`;
     }
 
     console.log('📤 Sending response:', responseText);
