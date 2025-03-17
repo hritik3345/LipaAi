@@ -24,16 +24,20 @@ if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) {
   process.exit(1);
 }
 
-async function getExternalLink(query) {
+// Updated function to return an array of up to 3 reference links
+async function getExternalLinks(query) {
   try {
     const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
       params: { key: GOOGLE_API_KEY, cx: GOOGLE_CSE_ID, q: query }
     });
-    console.log("API Response:", JSON.stringify(response.data, null, 2)); // Add this line
-    return response.data.items?.[0]?.link || null;
+    console.log("API Response:", JSON.stringify(response.data, null, 2));
+    const items = response.data.items || [];
+    // Get the top 3 links if available
+    const links = items.slice(0, 3).map(item => item.link);
+    return links;
   } catch (error) {
     console.error('API Error:', error.response?.data || error.message);
-    return null;
+    return [];
   }
 }
 
@@ -59,7 +63,7 @@ app.post('/webhook', async (req, res) => {
     const citationRegex = /\[citation start\](.+?)\[citation end\]/s;
     const match = bucketAnswer.match(citationRegex);
     if (match && match[1]) {
-      citation = match[1].trim(); 
+      citation = match[1].trim();
       // Remove the entire citation block from the main answer
       bucketAnswer = bucketAnswer.replace(citationRegex, '').trim();
     }
@@ -74,15 +78,18 @@ app.post('/webhook', async (req, res) => {
     }
 
     console.log('🔎 Calling Google Search API...');
-    const externalLink = await getExternalLink(userQuery);
-    console.log('🔗 External link result:', externalLink);
+    const externalLinks = await getExternalLinks(userQuery);
+    console.log('🔗 External links result:', externalLinks);
 
     // Construct response
     let responseText = bucketAnswer;
 
-    // Keep your existing reference logic intact
-    if (externalLink) {
-      responseText += `\n\nReference: <a href="${externalLink}" target="_blank">${externalLink}</a>`;
+    // Append all reference links if available
+    if (externalLinks.length > 0) {
+      const refs = externalLinks
+        .map(link => `<a href="${link}" target="_blank">${link}</a>`)
+        .join("\n");
+      responseText += `\n\nReferences:\n${refs}`;
     }
 
     // ─────────────────────────────────────────────────────────────────────
