@@ -24,7 +24,7 @@ if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) {
   process.exit(1);
 }
 
-// Updated function to return an array of up to 3 reference links
+// Function to return an array of up to 3 reference links from the Google Custom Search API
 async function getExternalLinks(query) {
   try {
     const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
@@ -56,14 +56,21 @@ app.post('/webhook', async (req, res) => {
       bucketAnswer = knowledgeAnswers[0].answer;
     }
 
-    // Removed citation extraction code block
+    // Removed citation extraction block
 
-    // Use the full answer (bucketAnswer) as the search query for external links
-    console.log('📝 Using bucketAnswer as search query:', bucketAnswer);
-    const externalLinks = await getExternalLinks(bucketAnswer);
+    // Extract keywords (full sentence) from the request
+    const userQuery = req.body.text || req.body.queryResult?.queryText || "https://pubmed.ncbi.nlm.nih.gov/24138536/";
+    console.log('📝 Extracted user query (keywords):', userQuery);
+
+    if (!userQuery) {
+      console.warn('⚠️ No user query found in request');
+    }
+
+    console.log('🔎 Calling Google Search API with full sentence as query...');
+    const externalLinks = await getExternalLinks(userQuery);
     console.log('🔗 External links result:', externalLinks);
 
-    // Construct response
+    // Construct response using bucketAnswer as the main response text
     let responseText = bucketAnswer;
 
     // Append all reference links if available
