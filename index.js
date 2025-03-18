@@ -56,29 +56,11 @@ app.post('/webhook', async (req, res) => {
       bucketAnswer = knowledgeAnswers[0].answer;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    //  1) CITATION LOGIC: Detect [citation start] ... [citation end]
-    // ─────────────────────────────────────────────────────────────────────
-    let citation = '';
-    const citationRegex = /\[citation start\](.+?)\[citation end\]/s;
-    const match = bucketAnswer.match(citationRegex);
-    if (match && match[1]) {
-      citation = match[1].trim();
-      // Remove the entire citation block from the main answer
-      bucketAnswer = bucketAnswer.replace(citationRegex, '').trim();
-    }
-    // ─────────────────────────────────────────────────────────────────────
+    // Removed citation extraction code block
 
-    // Extract query - try different possible locations in the request
-    const userQuery = req.body.text || req.body.queryResult?.queryText || "https://pubmed.ncbi.nlm.nih.gov/24138536/";
-    console.log('📝 Extracted user query:', userQuery);
-
-    if (!userQuery) {
-      console.warn('⚠️ No user query found in request');
-    }
-
-    console.log('🔎 Calling Google Search API...');
-    const externalLinks = await getExternalLinks(userQuery);
+    // Use the full answer (bucketAnswer) as the search query for external links
+    console.log('📝 Using bucketAnswer as search query:', bucketAnswer);
+    const externalLinks = await getExternalLinks(bucketAnswer);
     console.log('🔗 External links result:', externalLinks);
 
     // Construct response
@@ -90,13 +72,6 @@ app.post('/webhook', async (req, res) => {
         .map(link => `<a href="${link}" target="_blank">${link}</a>`)
         .join("\n");
       responseText += `\n\nReferences:\n${refs}`;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    //  2) Append the citation to the final response, if found
-    // ─────────────────────────────────────────────────────────────────────
-    if (citation) {
-      responseText += `\n\nCitation: ${citation}`;
     }
 
     console.log('📤 Sending response:', responseText);
