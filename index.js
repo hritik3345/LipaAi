@@ -36,7 +36,7 @@ async function getExternalLinks(query) {
     const links = items.slice(0, 3).map(item => item.link);
     return links;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API1 Error:', error.response?.data || error.message);
     return [];
   }
 }
@@ -125,3 +125,4 @@ app.get('/', (req, res) => {
 app.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${port}`);
 });
+
